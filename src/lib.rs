@@ -10,6 +10,55 @@ use std::time::Duration;
 pub type ProfileUploadResult = core::result::Result<Url, String>;
 pub type ProfileStatusResult = core::result::Result<ProfileStatus, String>;
 
+pub struct Profiler {
+	key: String,
+	apk_path: String,
+}
+
+pub struct ProfileResult {
+	status: ProfileStatus,
+	pub profiles: Vec<Profile>,
+}
+
+impl Display for ProfileResult {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "status: {}\n", self.status);
+		for p in &self.profiles {
+			write!(f, "{}\n", p);
+		}
+		write!(f, "\n")
+	}
+}
+
+pub enum ProfileStatus {
+	Crawling,
+	Pending,
+	Complete,
+	Failed,
+	Error,
+}
+
+#[derive(Deserialize)]
+pub struct Profile {
+	pub scenario_name: String,
+	pub time_in_ms: u64,
+	pub profile_url: String,
+}
+
+#[allow(dead_code)]
+impl<'a> Profile {
+	fn get_scenario_name(&'a self) -> &'a String {
+		&self.scenario_name
+	}
+}
+
+impl Display for Profile {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "scenario_name: {}\n", self.scenario_name);
+		write!(f, "time_in_ms: {}\n", self.time_in_ms);
+		write!(f, "profile_url: {}\n", self.profile_url)
+	}
+}
 pub struct ProfileScenarios {
 	scenarios: Vec<ProfileScenario>,
 }
@@ -56,15 +105,6 @@ impl Display for ProfileScenario {
 		result
 	}
 }
-
-pub enum ProfileStatus {
-	Crawling,
-	Pending,
-	Complete,
-	Failed,
-	Error,
-}
-
 impl Display for ProfileStatus {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match *self {
@@ -76,12 +116,6 @@ impl Display for ProfileStatus {
 		}
 	}
 }
-
-pub struct Profile {
-	key: String,
-	apk_path: String,
-}
-
 #[allow(non_snake_case)]
 fn convert_Value_to_ProfileStatus(v: &Value) -> ProfileStatus {
 	let status = &v["status"];
@@ -109,7 +143,7 @@ fn convert_Value_to_ProfileUploadResult(v: &Value) -> ProfileUploadResult {
 
 const ND_UPLOAD_URL: &str = "https://nimbledroid.com/api/v2/apks";
 
-impl Profile {
+impl Profiler {
 	pub fn new(key: &str, apk_path: &str) -> Self {
 		Self {
 			key: key.to_string(),
@@ -117,13 +151,15 @@ impl Profile {
 		}
 	}
 
-	fn get_profile(&self, upload_url: &Url) -> reqwest::Result<reqwest::Response> {
+	pub fn get_profile_result(&self, upload_url: &Url) -> Option<ProfileResult> {
 		let get_profile_client = reqwest::Client::builder()
 			.timeout(None)
 			.gzip(false)
 			.build()
 			.unwrap();
-		get_profile_client
+		let mut profile_result: reqwest::Response;
+
+		match get_profile_client
 			.get(&upload_url.to_string())
 			.header(
 				reqwest::header::AUTHORIZATION,
@@ -135,10 +171,62 @@ impl Profile {
 				"nimbledroidrs/0.0.1".to_string(),
 			)
 			.send()
+		{
+			Ok(response) => profile_result = response,
+			Err(e) => return None,
+		}
+		let profile_result = profile_result.text().unwrap();
+
+		if let Ok(profile_result) = serde_json::from_str::<Value>(&profile_result) {
+			let profile_result_status = convert_Value_to_ProfileStatus(&profile_result);
+			match profile_result_status {
+				ProfileStatus::Error => Some(ProfileResult {
+					status: ProfileStatus::Error,
+					profiles: Vec::<Profile>::new(),
+				}),
+				s @ ProfileStatus::Failed | s @ ProfileStatus::Complete => {
+					let mut result_profiles: Vec<Profile> = Vec::<Profile>::new();
+					if let Ok(profiles) =
+						serde_json::from_value::<Vec<Profile>>(profile_result["profiles"].clone())
+					{
+						result_profiles = profiles;
+					}
+					Some(ProfileResult {
+						status: s,
+						profiles: result_profiles,
+					})
+				}
+				_ => Some(ProfileResult {
+					status: ProfileStatus::Error,
+					profiles: Vec::<Profile>::new(),
+				}),
+			}
+		} else {
+			None
+		}
 	}
 
 	pub fn get_profile_scenarios(&self, upload_url: &Url) -> Option<ProfileScenarios> {
-		match self.get_profile(upload_url) {
+		let get_profile_client = reqwest::Client::builder()
+			.timeout(None)
+			.gzip(false)
+			.build()
+			.unwrap();
+		let mut profile_result: reqwest::Response;
+
+		match get_profile_client
+			.get(&upload_url.to_string())
+			.header(
+				reqwest::header::AUTHORIZATION,
+				format!("Basic {}", base64::encode(&format!("{}:", self.key))),
+			)
+			.header(reqwest::header::HOST, "nimbledroid.com".to_string())
+			.header(
+				reqwest::header::USER_AGENT,
+				"nimbledroidrs/0.0.1".to_string(),
+			)
+			.send()
+		{
 			Ok(mut o) => {
 				let profile_status_result = o.text().unwrap();
 				if let Ok(parsed_response) = serde_json::from_str::<Value>(&profile_status_result) {
@@ -158,18 +246,19 @@ impl Profile {
 	}
 
 	pub fn get_profile_status(&self, upload_url: &Url) -> ProfileStatusResult {
-		match self.get_profile(upload_url) {
-			Ok(mut o) => {
-				let profile_status_result = o.text().unwrap();
-				println!("Response: {}", profile_status_result);
-				if let Ok(parsed_response) = serde_json::from_str::<Value>(&profile_status_result) {
-					Ok(convert_Value_to_ProfileStatus(&parsed_response))
-				} else {
-					Err("Failed to parse response".to_string())
-				}
-			}
-			Err(e) => Err(format!("Failed to get profile status: {}", e.to_string())),
+		match self.get_profile_result(upload_url) {
+			Some(o) => Ok(o.status),
+			None => Err("Failed to get profile status:".to_string()),
 		}
+	}
+	pub fn wait_for_profile(&self, upload_url: &Url) {
+		while {
+			match self.get_profile_status(upload_url) {
+				Ok(ProfileStatus::Complete) => false,
+				Ok(ProfileStatus::Failed) => false,
+				_ => true,
+			}
+		} {}
 	}
 
 	pub fn upload(&self) -> ProfileUploadResult {
