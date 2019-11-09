@@ -41,6 +41,7 @@ pub enum ProfileStatus {
 #[derive(Deserialize)]
 pub struct Profile {
 	pub scenario_name: String,
+	pub status: String,
 	pub time_in_ms: u64,
 	pub profile_url: String,
 }
@@ -53,12 +54,15 @@ impl<'a> Profile {
 	pub fn get_time_in_ms(&'a self) -> u64 {
 		self.time_in_ms
 	}
-
+	pub fn get_status(&'a self) -> &'a String {
+		&self.status
+	}
 }
 
 impl Display for Profile {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "scenario_name: {}\n", self.scenario_name);
+		write!(f, "status: {}\n", self.status);
 		write!(f, "time_in_ms: {}\n", self.time_in_ms);
 		write!(f, "profile_url: {}\n", self.profile_url)
 	}
