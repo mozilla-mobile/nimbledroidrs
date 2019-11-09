@@ -47,10 +47,10 @@ pub struct Profile {
 
 #[allow(dead_code)]
 impl<'a> Profile {
-	fn get_scenario_name(&'a self) -> &'a String {
+	pub fn get_scenario_name(&'a self) -> &'a String {
 		&self.scenario_name
 	}
-	fn get_time_in_ms(&'a self) -> u64 {
+	pub fn get_time_in_ms(&'a self) -> u64 {
 		self.time_in_ms
 	}
 
