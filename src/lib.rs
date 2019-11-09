@@ -50,6 +50,10 @@ impl<'a> Profile {
 	fn get_scenario_name(&'a self) -> &'a String {
 		&self.scenario_name
 	}
+	fn get_time_in_ms(&'a self) -> u64 {
+		self.time_in_ms
+	}
+
 }
 
 impl Display for Profile {
