@@ -80,11 +80,11 @@ pub struct ProfileScenario {
 
 #[allow(dead_code)]
 impl<'a> ProfileScenario {
-	fn get_name(&'a self) -> &'a String {
+	pub fn get_name(&'a self) -> &'a String {
 		&self.name
 	}
 
-	fn get_time(&self) -> Duration {
+	pub fn get_time(&self) -> Duration {
 		Duration::from_millis(self.time)
 	}
 }
