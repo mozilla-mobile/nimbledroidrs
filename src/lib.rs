@@ -6,6 +6,7 @@ use serde_json::Value;
 use std::fmt;
 use std::fmt::Display;
 use std::time::Duration;
+use std::time::Instant;
 
 pub type ProfileUploadResult = core::result::Result<Url, String>;
 pub type ProfileStatusResult = core::result::Result<ProfileStatus, String>;
@@ -259,14 +260,24 @@ impl Profiler {
 			None => Err("Failed to get profile status:".to_string()),
 		}
 	}
-	pub fn wait_for_profile(&self, upload_url: &Url) {
+
+	pub fn wait_for_profile(&self, upload_url: &Url, duration: Duration) -> Result<(), ()> {
+		let start = Instant::now();
+		let mut timeout = false;
 		while {
 			match self.get_profile_status(upload_url) {
 				Ok(ProfileStatus::Complete) => false,
 				Ok(ProfileStatus::Failed) => false,
 				_ => true,
 			}
-		} {}
+		} {
+			if Instant::now() - start > duration {
+				return Err(());
+				break;
+			}
+			std::thread::sleep(Duration::from_secs(3));
+		}
+		Ok(())
 	}
 
 	pub fn upload(&self) -> ProfileUploadResult {
