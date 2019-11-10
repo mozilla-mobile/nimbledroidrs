@@ -25,11 +25,12 @@ pub struct ProfileResult {
 
 impl Display for ProfileResult {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "status: {}\n", self.status);
+		let mut result = writeln!(f, "status: {}", self.status);
 		for p in &self.profiles {
-			write!(f, "{}\n", p);
+			result = result.or_else(|_| writeln!(f, "{}", p));
 		}
-		write!(f, "\n")
+		result = result.or_else(|_| writeln!(f));
+		result
 	}
 }
 
@@ -80,10 +81,11 @@ impl<'a> Profile {
 
 impl Display for Profile {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "scenario_name: {}\n", self.scenario_name);
-		write!(f, "status: {}\n", self.status);
-		write!(f, "time_in_ms: {}\n", self.time_in_ms);
-		write!(f, "profile_url: {}\n", self.profile_url)
+		let mut result = writeln!(f, "scenario_name: {}", self.scenario_name);
+		result = result.or_else(|_| writeln!(f, "status: {}", self.status));
+		result = result.or_else(|_| writeln!(f, "time_in_ms: {}", self.time_in_ms));
+		result = result.or_else(|_| writeln!(f, "profile_url: {}", self.profile_url));
+		result
 	}
 }
 
@@ -128,16 +130,16 @@ impl<'a> ProfileScenario {
 
 impl Display for ProfileScenario {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		let mut result = write!(f, "name: {}\n", self.name);
-		result = result.or(write!(f, "time: {}\n", self.time));
+		let mut result = writeln!(f, "name: {}", self.name);
+		result = result.or_else(|_| writeln!(f, "time: {}", self.time));
 
-		result = result.or(write!(f, "Screenshots:\n"));
+		result = result.or_else(|_| writeln!(f, "Screenshots:"));
 		for s in &self.screenshots {
-			result = result.or(write!(f, "{}\n", s));
+			result = result.or_else(|_| writeln!(f, "{}", s));
 		}
-		result = result.or(write!(f, "Thumbnail Screenshots:\n"));
+		result = result.or_else(|_| writeln!(f, "Thumbnail Screenshots:"));
 		for s in &self.thumbnail_screenshots {
-			result = result.or(write!(f, "{}\n", s));
+			result = result.or_else(|_| writeln!(f, "{}", s));
 		}
 		result
 	}
@@ -209,7 +211,7 @@ impl Profiler {
 			.send()
 		{
 			Ok(response) => profile_result = response,
-			Err(e) => return None,
+			Err(_) => return None,
 		}
 		let profile_result = profile_result.text().unwrap();
 
@@ -248,8 +250,6 @@ impl Profiler {
 			.gzip(false)
 			.build()
 			.unwrap();
-		let mut profile_result: reqwest::Response;
-
 		match get_profile_client
 			.get(&upload_url.to_string())
 			.header(
@@ -290,7 +290,6 @@ impl Profiler {
 
 	pub fn wait_for_profile(&self, upload_url: &Url, duration: Duration) -> Result<(), ()> {
 		let start = Instant::now();
-		let mut timeout = false;
 		while {
 			match self.get_profile_status(upload_url) {
 				Ok(ProfileStatus::Complete) => false,
@@ -300,7 +299,6 @@ impl Profiler {
 		} {
 			if Instant::now() - start > duration {
 				return Err(());
-				break;
 			}
 			std::thread::sleep(Duration::from_secs(3));
 		}
